@@ -10,12 +10,13 @@ import eos
 import socket
 
 CLIENT_IP = SERVER_IP = "127.0.0.1"
-IN_PORT=8000 #Eos's OSC in port
+#IN_PORT=8000 #Eos's OSC in port
+IN_PORT=1234
 OUT_PORT=8001 #Eos's OSC out port
 
 encoderPages=["core","color1","color2","shutter","gobo","5","6","7"]
 encoderParameters=[
-    ["level","pan","tilt","zoom","edge","iris","",""],
+    ["intens","pan","tilt","zoom","edge","iris","",""],
     ["level","red","green","blue","amber","white","hue","saturation"],
     ["level","cyan","magenta","yellow","cto","ctb","hue","saturation"],
     ["level","frame thrust a","frame angle a","zoom","edge","iris","",""],
@@ -61,15 +62,18 @@ def updateTouchscreen(text):
 
 def dialCallback(deck, n, type, data):
         t=time.time()
+        parameter = encoderParameters[encoderPage[0]][encoderPage[1]+n]
         if type == DialEventType.TURN:
             deltaT = t-lastKnobEvent[n]
             lastKnobEvent[n] = t
             velocity = data/deltaT
-            parameter = encoderParameters[encoderPage[0]][encoderPage[1]+n]
             print(f"{parameter} was turned {data} counts, velocity = {velocity:0.3f} counts/sec")
             e.client.send_message(f"/eos/wheel/{parameter}",float(data))
         if type == DialEventType.PUSH:
-            if data: print(f"Knob {n} was pushed")
+            if data:
+                print(f"Knob {n} was pushed")
+                print(f"{parameter} home")
+                e.client.send_message(f"/eos/param/{parameter}/home")
             else: print(f"Knob {n} was released")
     
 def touchCallback(deck, event_type, values):
@@ -107,12 +111,23 @@ def touchCallback(deck, event_type, values):
             print(encoderPage)
             updateTouchscreen(encoderParameters[page][index:])
 
-def myEosHandler(addr, *args):
-    print("My Eos Handler {addr} {args}")
+def eosDefaultHandler(arg):
+    print("My Default Handler ",end="")
+    print(arg)
+
+def eosSoftkeyHandler(arg):
+    print("Softkey Handler ",end="")
+    print(arg)
+
+def eosWheelHandler(arg):
+    print(f"Wheel Handler {arg.params}")
 
 sd = sdPlus()
 e = eos.eos(SERVER_IP,IN_PORT,CLIENT_IP,OUT_PORT) #Instantiate an Eos client and server
 #e.bindDispatcher("/eos*",myEosHandler)
+e.bindHandler("",eosDefaultHandler)
+e.bindHandler("/eos/out/softkey",eosSoftkeyHandler)
+e.bindHandler("/eos/out/active/wheel",eosWheelHandler)
 e.client.send_message("/eos/ping",None)
 
 sd.setTouchscreenCallback(touchCallback)
@@ -120,5 +135,8 @@ sd.setDialCallback(dialCallback)
 for i in range(8): sd.setKeyImage(i,drawKeyBackground(Image.new('RGB', (120, 120), 'black')))
 updateTouchscreen(encoderParameters[0][0:4])
 
+
+
 while True:
-    continue
+    e.service()
+    time.sleep(.005)
